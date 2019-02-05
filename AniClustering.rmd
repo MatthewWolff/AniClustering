@@ -1,0 +1,101 @@
+---
+title: "Recommending Television Shows from User Ratings"
+author: "Matthew Wolff"
+date: "2/1/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
+```{r packages_and_constants}
+library(tidyverse)
+library(cluster) #clustering
+library(mclust) # gaussian mixture modeling
+library(FactoMineR) # PCA
+library(circlize) # sicc plots
+library(kableExtra)
+library(viridis)
+library(gtools)
+
+blank <- theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))  # removes most formatting 
+centered <- element_text(hjust = 0.5)
+```
+
+```{r loading}
+raw_shows <- read_csv("~/github/aniclust/data/anime.csv", progress=FALSE)
+raw_ratings <- read_csv("~/github/aniclust/data/rating.csv", progress=FALSE)
+```
+
+```{r cleaning}
+ratings <- raw_ratings %>% mutate(
+  user_id = as.integer(user_id),
+  anime_id = as.integer(anime_id)
+)
+shows <- raw_shows %>% mutate(
+  anime_id = as.integer(anime_id),
+  episodes = parse_integer(episodes), # not all episode durations are known
+  type = factor(type),
+  genre = strsplit(genre, ", ")
+)
+
+# manually fill in the total episode number for 5 most popular shows w/missing episode num
+unknown_ep_num <- problems(shows$episodes)$row
+most_pop_ongoing <- mp <- shows[unknown_ep_num,] %>% add_column(row=unknown_ep_num) %>% top_n(5, members)
+shows[mp$row,]$episodes <- c(869, 930, 500, 131, 50)
+```
+```{r visual_exploration, fig.height=3}
+### exploratory
+# genre distribution (pi/bar chart)
+shows$genre %>% unlist %>% plyr::count() %>% 
+  .[-c(8,12),] %>% # remove unsavory stuff - we're keeping this appropriate
+  top_n(20, freq) %>% 
+  rename(Genre = x, Count = freq) %>%
+  ggplot() + geom_histogram(mapping = aes(Genre, Count, fill=Genre), stat="identity") +
+  blank +
+  guides(fill=FALSE) + # remove legend for fill
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = centered) + 
+  scale_fill_viridis_d() +
+  ggtitle("Top 20 Most Popular Genres")
+```
+```{r circle_plot, fig.width=5, fig.align="center"}
+# genre association via circlize -- canonical-correlation analysis?
+combo <- function(v) { v <- unique(v); if(length(v) > 1) combinations(length(v), 2, v) else NA }
+links <- shows$genre %>% sapply(combo) %>% do.call(rbind, .) %>% as_tibble() %>%
+  transmute(
+    from = V1 %>% unlist,
+    to   = V2 %>% unlist
+  ) %>% 
+  filter(!is.na(to) & !is.na(from)) %>% # remove NAs
+  plyr::count() %>% 
+  top_n(16, freq) # select top 10 most common pairings
+
+# coloring
+set.seed(1966) # for both colors and shuffling the linkages (when they're ordered)
+grid.names <- unique(c(links$from, links$to))
+grid.colors <- length(grid.names) %>% viridis %>% `names<-`(grid.names)
+colors <- dim(links)[1] %>% viridis()
+links[sample(nrow(links)),] %>% 
+  chordDiagram(scale=T, 
+               transparency=0.1, 
+               grid.col=grid.colors, col=colors,
+               annotationTrack = c("name","grid")) 
+title(main="Frequent Pairings of the 10 Categories")
+```
+```{r tables}
+table1 <- shows %>% select(-c(anime_id, genre, name, type)) %>% summary() %>% 
+  as.data.frame %>% as_tibble %>% select(-Var1) %>% group_by(Var2) %>%
+  mutate(Stat = seq_along(Var2)) %>% spread(key = Stat, value = Freq) %>% t %>% as_tibble %>%
+  `colnames<-`(.[1,]) %>% .[-1,] %>% mutate_all(function(x) gsub("^.*?:", "", x, perl = T)) %>%
+  `rownames<-`(c("Minimum", "1st Quartile", "Median", "Mean", "3rd Quartile", "Max", "Missing Vals"))
+table2 <- links %>% arrange(desc(freq)) 
+
+list(table1, table2) %>%
+  kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "") %>% gsub("NA", "0", .)
+
+# cluster principal components -- evaluate
+```
+
