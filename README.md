@@ -1,2 +1,2 @@
 # Predicting TV Show Preference from User Ratings
-![](slides/slides.pdf?raw=true)
+![](https://docs.google.com/viewer?url=https://github.com/MatthewWolff/AniClustering/raw/master/slides/slides.pdf)

@@ -33,8 +33,8 @@ no_legend <- theme(legend.position="none")
 ```
 
 ```{r loading}
-raw_shows <- read_csv("~/github/aniclust/data/anime.csv", progress=FALSE)
-raw_ratings <- read_csv("~/github/aniclust/data/rating.csv", progress=FALSE)
+raw_shows <- read_csv("~/github/aniclustering/data/anime.csv", progress=FALSE)
+raw_ratings <- read_csv("~/github/aniclustering/data/rating.csv", progress=FALSE)
 ```
 
 ```{r cleaning}
@@ -155,25 +155,6 @@ for(i in 1:paired$nrow){ for(j in 1:paired$ncol){paired[i,j] <- paired[i,j] + sc
 paired
 ```
 
-```{r encode_show_data}
-genre_list <- list(c("Drama", "Romance", "School", "Supernatural"))
-genres <- unlist(shows$genre) %>% unique %>% sort
-encode_genre <- function(genre_list) { 
-  genre_list <- genre_list[[1]] %>% .[!is.na(.)]
-  uniq <- genre_list %>% .[!is.na(.)] %>% unique # sanitize
-  genre_array <- rep(-1, length(genres)) %>% `names<-`(genres) # NA is last
-  genre_array[genre_list] <- 1
-  genre_array
-}
-# this might be a bad idea...
-encode_popularity <- function(member_num) {
-  if(member_num >= 600000) return("Popular") # top 15
-  if(member_num >= 50000) return("Common") # top 500
-  else return("Niche") # the other 11,500
-}
-genre_columns <- shows$genre %>% lapply(encode_genre) %>% do.call(rbind, .) %>% as_tibble
-df <- bind_cols(shows, genre_columns) %>% select(-c(genre, anime_id, name))
-```
 ```{r pca.prep}
 # binarize user enjoyment data by comparing their average enjoyment to an
 pre.pca <- inner_join(shows, ratings, by="anime_id") %>%
@@ -185,7 +166,7 @@ user_averages <- pre.pca %>% group_by(user_id) %>% summarize(user_average = mean
 pre.pca <- inner_join(pre.pca, user_averages, by="user_id") %>%
   filter(user_rating <= user_average)
 # minify data
-subset <- which(pre.pca$user_id <= 500)
+subset <- which(pre.pca$user_id <= 300)
 df <- pre.pca[subset,] # mini dataset for now
 
 # cross tabulate to exchange info btwn user and show
@@ -206,13 +187,14 @@ named_data <- named_data %>% select(anime_id, name, genre)
 pca_data <- pca_data[, colSums(abs(pca_data)) != 0] # eliminate empty columns
 pca <- prcomp(pca_data, scale=T)
 comp <- data.frame(pca$x[,1:3])
-res.pca <- pca_data %>% PCA(ncp=3, scale.unit = TRUE, graph=F) # 20% with 3 components
-head(res.pca$eig, 5) %>% 
-  kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "",
-        caption = "Principal Component Analysis: Top Eigenvalues", longtable=T)
+# res.pca <- pca_data %>% PCA(ncp=3, scale.unit = TRUE, graph=F) # 20% with 3 components
+# head(res.pca$eig, 5) %>% 
+  # kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "",
+        # caption = "Principal Component Analysis: Top Eigenvalues", longtable=T)
 ```
 ```{r pca.visualized, fig.height=3}
-scatterplot3d(pca$x[,1:3], color=viridis(1),
+pca.df <- pca$x[,1:3] %>% as_tibble %>% filter(PC1 > -1 & PC2 > -1 & PC3 > -1)
+scatterplot3d(pca.df, color=viridis(1),
               main = "Post-PCA: Three Principal Components, Unclustered",
               xlab = "Principal Component 1",
               ylab = "Principal Component 2",
@@ -220,15 +202,15 @@ scatterplot3d(pca$x[,1:3], color=viridis(1),
 ```
 \newline
 ```{r pca.determine_clustering, fig.height=2}
-fviz_nbclust(comp, kmeans, method = "silhouette")
+fviz_nbclust(pca.df, kmeans, method = "silhouette")
 ```
 ```{r pca.show_clustering, fig.height=4}
-k_val = 6
-k <- kmeans(comp, k_val, nstart=25, iter.max=1000)
+k_val = 2
+k <- kmeans(pca.df, k_val, nstart=25, iter.max=1000)
 # klusters <- sapply(3:15, function(k) kmeans(comp, k, nstart=25, iter.max=1000))
 # determine optimal cluster #
 colors <- viridis(k_val)
-scatterplot3d(comp$PC1, comp$PC2, comp$PC3, color=colors[k$cluster],
+scatterplot3d(pca.df, color=colors[k$cluster],
               main = paste0("Post-PCA, Clustered (k = ",k_val,")"),
               xlab = "Principal Component 1",
               ylab = "Principal Component 2",
