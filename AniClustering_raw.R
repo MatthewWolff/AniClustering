@@ -1,17 +1,3 @@
----
-title: "Recommending Television Shows from User Ratings"
-author: "Matthew Wolff"
-output:
-  pdf_document: default
-  html_document: default
-header-includes: 
-- \usepackage{longtable}
----
-\pagenumbering{gobble}
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
-```
-```{r packages_and_constants}
 library(tidyverse)
 library(cluster) #clustering
 library(mclust) # gaussian mixture modeling
@@ -30,14 +16,10 @@ blank <- theme_bw() + theme(panel.border = element_blank(), panel.grid.major = e
 blank_w_border <- theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) 
 centered <- element_text(hjust = 0.5)
 no_legend <- theme(legend.position="none")
-```
 
-```{r loading}
 raw_shows <- read_csv("~/github/aniclustering/data/anime.csv", progress=FALSE)
 raw_ratings <- read_csv("~/github/aniclustering/data/rating.csv", progress=FALSE)
-```
 
-```{r cleaning}
 ratings <- raw_ratings %>% mutate(
   user_id = as.integer(user_id),
   anime_id = as.integer(anime_id)
@@ -61,13 +43,7 @@ shows[most_pop_ongoing$row,]$episodes <- c(869, 930, 500, 131, 6)
 
 # remove all the missing episode numbers
 shows <- shows %>% filter(!is.na(shows$episodes))
-```
-```{r }
-# raw_shows %>% head(3) %>% 
-#   kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "",
-#         caption = "Format of Dataset", longtable=T)
-```
-```{r missing_values}
+
 raw_shows %>% mutate(episodes = parse_integer(episodes)) %>%
   select(-c(anime_id, genre, name, type)) %>% summary() %>% 
   as.data.frame %>% as_tibble %>% select(-Var1) %>% group_by(Var2) %>%
@@ -77,8 +53,8 @@ raw_shows %>% mutate(episodes = parse_integer(episodes)) %>%
   t %>%
   kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "",
         caption = "Summary of Show Data and Missing Values", longtable=T) %>% gsub("NA", "0", .)
-```
-```{r visual_exploration, fig.height=3}
+
+
 ### exploratory
 # genre distribution (pi/bar chart)
 shows$genre %>% unlist %>% plyr::count() %>% 
@@ -92,10 +68,7 @@ shows$genre %>% unlist %>% plyr::count() %>%
         plot.title = centered) + 
   scale_fill_viridis_d() +
   ggtitle(paste0("Top 20 Most Popular Genres (from ", dim(shows)[1]," shows)"))
-```
-\begin{minipage}[t]{0.5\textwidth}
-\vspace*{-4.5cm}
-```{r circle_plot, fig.width=5, fig.align="center"}
+
 # genre association via circlize -- canonical-correlation analysis?
 combo <- function(v) { v <- unique(v); if(length(v) > 1) combinations(length(v), 2, v) else NA }
 links <- shows$genre %>% sapply(combo) %>%  # generate all pairs per genre list
@@ -119,21 +92,10 @@ links[sample(nrow(links)),] %>%
                grid.col=grid.colors, col=colors,
                annotationTrack = c("name","grid")) 
 title(main="Most Frequent Genre Pairings")
-```
-\end{minipage}
-\begin{minipage}[b]{0.1\textwidth}
-\quad
-\end{minipage}
-\begin{minipage}[b]{0.4\textwidth}
-\begin{center}
-\textbf{Frequent Pairing Counts}
-```{r circle_table}
+
 links %>% rename(Genre1 = from, Genre2 = to, Count = freq) %>% arrange(desc(Count)) %>%
   kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "")
-```
-\end{center}
-\end{minipage}
-```{r numerical_correlations, fig.height=5}
+
 paired <- shows %>% 
   mutate(`log10(Num. of Ratings)` = log10(members), `Average Rating` = meanRating) %>% 
   filter(type %in% c("OVA", "Special", "TV", "Movie")) %>%
@@ -144,9 +106,7 @@ paired <- shows %>%
 # adjust colors
 for(i in 1:paired$nrow){ for(j in 1:paired$ncol){paired[i,j] <- paired[i,j] + scale_fill_viridis_d() }}
 paired
-```
 
-```{r pca.prep}
 # binarize user enjoyment data by comparing their average enjoyment to an
 pre.pca <- inner_join(shows, ratings, by="anime_id") %>%
   rename(
@@ -173,8 +133,7 @@ pca_data <- df %>% mutate(
 
 # store names for recovery later
 named_data <- named_data %>% select(anime_id, name, genre)
-```
-```{r pca.execution}
+
 # do PCA and show top eigen values
 pca_data <- pca_data[, colSums(abs(pca_data)) != 0] # eliminate empty columns
 pca <- prcomp(pca_data, scale=T)
@@ -183,20 +142,17 @@ res.pca <- pca_data %>% PCA(ncp=3, scale.unit = TRUE, graph=F) # 20% with 3 comp
 head(res.pca$eig, 5) %>%
   kable(format = "latex", escape = F, booktabs = T, align='c', linesep = "",
         caption = "Principal Component Analysis: Top Eigenvalues", longtable=T)
-```
-```{r pca.visualized, fig.height=3}
+
+
 pca.df <- pca$x[,c(1,3,2)] #%>% as_tibble %>% filter(PC1 > -1 & PC2 > -1 & PC3 > -1)
 scatterplot3d(pca.df, color=viridis(1),
               main = "Post-PCA: Three Principal Components, Unclustered",
               xlab = "Principal Component 1",
               ylab = "Principal Component 2",
               zlab = "Principal Component 3")
-```
-\newline
-```{r pca.determine_clustering, fig.height=2}
+
 fviz_nbclust(pca.df, kmeans, method = "silhouette")
-```
-```{r pca.show_clustering, fig.height=4}
+
 k_val = 3
 k <- kmeans(pca.df, k_val, nstart=25, iter.max=1000)
 # determine optimal cluster number
@@ -206,8 +162,7 @@ scatterplot3d(pca.df, color=colors[k$cluster],
               xlab = "Principal Component 1",
               ylab = "Principal Component 2",
               zlab = "Principal Component 3")
-```
-```{r wordclouds}
+
 clustered_shows <- lapply(1:k_val, function(x) named_data[which(k$cluster == x),] %>% unique)
 cluster_word_counts <- clustered_shows %>% lapply(function(c) c$genre %>% unlist %>%
                                                     plyr::count() %>% arrange(desc(freq)))
@@ -219,8 +174,8 @@ invisible(
               max.words=30, random.order=FALSE, rot.per=0.2,
               scale=c(2,0.5), color=viridis(7) %>% rev))
 )
-```
-```{r, making_recommendations}
+
+
 set.seed(1996)
 show_recs <- clustered_shows[1:2] %>% 
   lapply(function(x) select(x, "anime_id") %>% inner_join(raw_shows) %>% 
@@ -229,4 +184,3 @@ show_recs[[1]] %>% kable(format = "latex", escape = F, booktabs = T, align='l',
                          linesep = "", caption = "Cluster 1 Recommendations", longtable=T)
 # show_recs[[2]] %>% kable(format = "latex", escape = F, booktabs = T, align='l',
 #                          linesep = "", caption = "Cluster 2 Recommendations")
-```
